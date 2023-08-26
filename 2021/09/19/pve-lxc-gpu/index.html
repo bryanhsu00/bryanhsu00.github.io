@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"yoursite.com","root":"/","scheme":"Pisces","version":"7.7.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-CCEHH3Q0YE"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-CCEHH3Q0YE');
+</script>
+  <meta name="description" content="前言最近把實驗室的電腦安裝成 Proxmox VE(以下簡稱PVE)，原本記憶體、CPU 等等的資源分享給每台虛擬機(以下簡稱VM)都好好的，直到有同學需要用到 GPU 才發現 GPU 沒辦法共享。PVE 官方有 GPU passthrough 給 VM 的教學，但是好像一顆 GPU 只能指派給一台 VM，突發奇想 PVE 本身支援 LXC Container，那是不是可以利用 container">
+<meta property="og:type" content="article">
+<meta property="og:title" content="如何在 Proxmox VE 環境下用 LXC Container 共享 GPU">
+<meta property="og:url" content="http://yoursite.com/2021/09/19/pve-lxc-gpu/index.html">
+<meta property="og:site_name" content="BryanHsu&#39;s blog">
+<meta property="og:description" content="前言最近把實驗室的電腦安裝成 Proxmox VE(以下簡稱PVE)，原本記憶體、CPU 等等的資源分享給每台虛擬機(以下簡稱VM)都好好的，直到有同學需要用到 GPU 才發現 GPU 沒辦法共享。PVE 官方有 GPU passthrough 給 VM 的教學，但是好像一顆 GPU 只能指派給一台 VM，突發奇想 PVE 本身支援 LXC Container，那是不是可以利用 container">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://yoursite.com/images/nvidia-grep.png">
+<meta property="og:image" content="http://yoursite.com/images/nvidia-smi.png">
+<meta property="og:image" content="http://yoursite.com/images/nvidia-cgroup.png">
+<meta property="og:image" content="http://yoursite.com/images/lxc-config.png">
+<meta property="og:image" content="http://yoursite.com/images/lxc-nvidia-smi.png">
+<meta property="article:published_time" content="2021-09-19T07:24:54.000Z">
+<meta property="article:modified_time" content="2022-05-20T21:48:50.661Z">
+<meta property="article:author" content="BryanHsu">
+<meta property="article:tag" content="LXC">
+<meta property="article:tag" content="PVE">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://yoursite.com/images/nvidia-grep.png">
+
+<link rel="canonical" href="http://yoursite.com/2021/09/19/pve-lxc-gpu/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true
+  };
+</script>
+
+  <title>如何在 Proxmox VE 環境下用 LXC Container 共享 GPU | BryanHsu's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <div>
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">BryanHsu's blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+<nav class="site-nav">
+  
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-fw fa-user"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>Archives</a>
+
+  </li>
+        <li class="menu-item menu-item-sitemap">
+
+    <a href="/sitemap.xml" rel="section"><i class="fa fa-fw fa-sitemap"></i>Sitemap</a>
+
+  </li>
+  </ul>
+
+</nav>
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block " lang="en">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2021/09/19/pve-lxc-gpu/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/bryan.jpg">
+      <meta itemprop="name" content="BryanHsu">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="BryanHsu's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          如何在 Proxmox VE 環境下用 LXC Container 共享 GPU
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2021-09-19 15:24:54" itemprop="dateCreated datePublished" datetime="2021-09-19T15:24:54+08:00">2021-09-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2022-05-21 05:48:50" itemprop="dateModified" datetime="2022-05-21T05:48:50+08:00">2022-05-21</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>最近把實驗室的電腦安裝成 <code>Proxmox VE</code>(以下簡稱<code>PVE</code>)，原本記憶體、CPU 等等的資源分享給每台虛擬機(以下簡稱<code>VM</code>)都好好的，直到有同學需要用到 GPU 才發現 GPU 沒辦法共享。<code>PVE</code> 官方有 GPU passthrough 給 VM 的教學，但是好像一顆 GPU 只能指派給一台 VM，突發奇想 <code>PVE</code> 本身支援 <code>LXC Container</code>，那是不是可以利用 container 來共享 GPU 資源？</p>
+<h1 id="作法"><a href="#作法" class="headerlink" title="作法"></a>作法</h1><p>先在 <code>PVE</code> 的主機上安裝 GPU 驅動程式，建立完 <code>LXC Container</code> 後把 GPU 對應的硬體 cgroup 編號寫進 <code>LXC Container</code> 的設定檔中，最後在 <code>LXC Container</code> 中再裝一次驅動程式，注意需要加上 <code>--no-kernel-module</code> 參數，就可以在 container 中使用顯卡囉。</p>
+<h1 id="步驟"><a href="#步驟" class="headerlink" title="步驟"></a>步驟</h1><ol>
+<li><p>更新 <code>PVE</code> 本身的 Sourcelist<br>參考：<a href="https://pve.proxmox.com/wiki/Package_Repositories" target="_blank" rel="noopener">https://pve.proxmox.com/wiki/Package_Repositories</a></p>
+</li>
+<li><p>更新 kernel</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">apt-get update</span><br><span class="line">apt-get dist-upgrade</span><br></pre></td></tr></table></figure></li>
+<li><p>安裝 PVE headers</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">apt-get update</span><br><span class="line">apt-get install pve-headers</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>利用 <code>lspci | grep -i nvidia</code> 取得顯卡資訊並從<a href="https://www.nvidia.com.tw/Download/index.aspx?lang=tw" target="_blank" rel="noopener">Nvidia 官網</a>找到對應顯卡驅動。<br>舉例：<code>./NVIDIA-Linux-x86_64-470.63.01.run</code><br>安裝完之後應該會在 <code>/dev</code> 底下看到 Nvidia 顯卡對應的裝置。<br><img src="/images/nvidia-grep.png" alt="">利用 <code>nvidia-smi</code> 確認一下顯卡有沒有被驅動程式讀到。<br><img src="/images/nvidia-smi.png" alt=""></p>
+</li>
+</ol>
+<ol start="5">
+<li><p>創建 <code>/etc/udev/rules.d/70-nvidia.rules</code> 並寫入以下內容，主要是更改 Nvidia 相關裝置的權限，方便 <code>LXC Container</code> 做使用，重開機之後這個檔案的內容就會被執行，不想重新開機也可以複製貼上指令即可。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># Create &#x2F;nvidia0, &#x2F;dev&#x2F;nvidia1 … and &#x2F;nvidiactl when nvidia module is loaded</span><br><span class="line"></span><br><span class="line">KERNEL&#x3D;&#x3D;&quot;nvidia&quot;, RUN+&#x3D;&quot;&#x2F;bin&#x2F;bash -c &#39;&#x2F;usr&#x2F;bin&#x2F;nvidia-smi -L &amp;&amp; &#x2F;bin&#x2F;chmod 666 &#x2F;dev&#x2F;nvidia*&#39;&quot;</span><br><span class="line"></span><br><span class="line"># Create the CUDA node when nvidia_uvm CUDA module is loaded</span><br><span class="line"></span><br><span class="line">KERNEL&#x3D;&#x3D;&quot;nvidia_uvm&quot;, RUN+&#x3D;&quot;&#x2F;bin&#x2F;bash -c &#39;&#x2F;usr&#x2F;bin&#x2F;nvidia-modprobe -c0 -u &amp;&amp; &#x2F;bin&#x2F;chmod 0666 &#x2F;dev&#x2F;nvidia-uvm*&#39;&quot;</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>取得 Nvidia 裝置 cgroup number 並寫入 LXC Container 設定檔中。<br>利用 <code>ls -al /dev/nvidia*</code> 與 <code>ls -al /dev/dri/*</code> 可以看到 Nvidia 相關的裝置前面都有 cgroup number，這裡我拿到的是 195, 506, 509, 226。<br><img src="/images/nvidia-cgroup.png" alt=""></p>
+</li>
+<li><p>建立 <code>LXC Container</code> 並把對應的裝置跟 cgroup number 寫進設定檔。<br>以下是我寫入的內容</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">lxc.cgroup.devices.allow: c 195:* rwm</span><br><span class="line">lxc.cgroup.devices.allow: c 506:* rwm</span><br><span class="line">lxc.cgroup.devices.allow: c 509:* rwm</span><br><span class="line">lxc.cgroup.devices.allow: c 226:* rwm</span><br><span class="line"></span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia0 dev&#x2F;nvidia0 none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidiactl dev&#x2F;nvidiactl none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia-modeset dev&#x2F;nvidia-modeset none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia-uvm dev&#x2F;nvidia-uvm none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia-uvm-tools dev&#x2F;nvidia-uvm-tools none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia-caps&#x2F;nvidia-cap1 dev&#x2F;nvidia-caps&#x2F;nvidia-cap1 none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;nvidia-caps&#x2F;nvidia-cap2 dev&#x2F;nvidia-caps&#x2F;nvidia-cap2 none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;dri&#x2F;card0 dev&#x2F;dri&#x2F;card0 none bind,optional,create&#x3D;file</span><br><span class="line">lxc.mount.entry: &#x2F;dev&#x2F;dri&#x2F;renderD128 dev&#x2F;dri&#x2F;renderD128 none bind,optional,create&#x3D;file</span><br></pre></td></tr></table></figure>
+<p>結果會長這樣<br><img src="/images/lxc-config.png" alt=""></p>
+</li>
+</ol>
+<ol start="8">
+<li>在 <code>LXC Container</code> 中再去官網抓同樣的驅動，安裝的時候加上 <code>--no-kernel-module</code> 參數。<br>舉例：<code>./NVIDIA-Linux-x86_64-470.63.01.run --no-kernel-module</code><br>成功囉！<br><img src="/images/lxc-nvidia-smi.png" alt=""></li>
+</ol>
+<h1 id="附註"><a href="#附註" class="headerlink" title="附註"></a>附註</h1><p>如果 <code>/dev</code> 底下沒有出現 <code>nvidia-modeset</code> 可以用 <code>nvidia-modprobe --modeset</code> 來載入。</p>
+<h1 id="參考"><a href="#參考" class="headerlink" title="參考"></a>參考</h1><ul>
+<li><a href="https://passbe.com/2020/02/19/gpu-nvidia-passthrough-on-proxmox-lxc-container/" target="_blank" rel="noopener">https://passbe.com/2020/02/19/gpu-nvidia-passthrough-on-proxmox-lxc-container/</a></li>
+<li><a href="http://ycfu.blog.mypc.tw/2020/11/ai-1pve-lxc-nvidia-gpu-tensorflow.html" target="_blank" rel="noopener">http://ycfu.blog.mypc.tw/2020/11/ai-1pve-lxc-nvidia-gpu-tensorflow.html</a></li>
+<li><a href="https://medium.com/@MARatsimbazafy/journey-to-deep-learning-nvidia-gpu-passthrough-to-lxc-container-97d0bc474957" target="_blank" rel="noopener">https://medium.com/@MARatsimbazafy/journey-to-deep-learning-nvidia-gpu-passthrough-to-lxc-container-97d0bc474957</a></li>
+<li><a href="https://theorangeone.net/posts/lxc-nvidia-gpu-passthrough/?fbclid=IwAR3o8jH4sp8ceE3GTkudK01TwKK9fJDVyHPGIIN4J3MjEQxrDQMHNB9rI-Q" target="_blank" rel="noopener">https://theorangeone.net/posts/lxc-nvidia-gpu-passthrough/?fbclid=IwAR3o8jH4sp8ceE3GTkudK01TwKK9fJDVyHPGIIN4J3MjEQxrDQMHNB9rI-Q</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LXC/" rel="tag"># LXC</a>
+              <a href="/tags/PVE/" rel="tag"># PVE</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/03/22/k8s-dashboard/" rel="prev" title="Kubernetes 中如何讓 Dashboard 在無 https 的情況下讓外部存取">
+      <i class="fa fa-chevron-left"></i> Kubernetes 中如何讓 Dashboard 在無 https 的情況下讓外部存取
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/10/23/pve-vm-kata/" rel="next" title="如何在 Proxmox VE 虛擬機中使用 Kata Containers">
+      如何在 Proxmox VE 虛擬機中使用 Kata Containers <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let activeClass = CONFIG.comments.activeClass;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#前言"><span class="nav-number">1.</span> <span class="nav-text">前言</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#作法"><span class="nav-number">2.</span> <span class="nav-text">作法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#步驟"><span class="nav-number">3.</span> <span class="nav-text">步驟</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#附註"><span class="nav-number">4.</span> <span class="nav-text">附註</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#參考"><span class="nav-number">5.</span> <span class="nav-text">參考</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="BryanHsu"
+      src="/images/bryan.jpg">
+  <p class="site-author-name" itemprop="name">BryanHsu</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+        <span class="site-state-item-count">5</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/jiaweihsu" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;jiaweihsu" rel="noopener" target="_blank"><i class="fa fa-fw fa-github"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:bryanhsu1020@@gmail.com" title="E-Mail → mailto:bryanhsu1020@@gmail.com" rel="noopener" target="_blank"><i class="fa fa-fw fa-envelope"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">BryanHsu</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> v4.2.0
+  </div>
+  <span class="post-meta-divider">|</span>
+  <div class="theme-info">Theme – <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a> v7.7.2
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
