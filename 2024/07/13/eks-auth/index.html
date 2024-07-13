@@ -6,7 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="generator" content="BryanHsu&#39;s blog">
-    <title>如何在 Proxmox VE 虛擬機中使用 Kata Containers - BryanHsu&#39;s blog</title>
+    <title>EKS 用戶身份認證流程 - BryanHsu&#39;s blog</title>
     <meta name="author" content="BryanHsu">
     
     
@@ -15,23 +15,20 @@
             <link rel="alternate" type="application/atom+xml" title="RSS" href="/atom.xml">
         
     
-    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"BryanHsu","sameAs":["https://github.com/bryanhsu00","https://tw.linkedin.com/in/bryan-hsu-668773202","mailto:bryanhsu1020@gmail.com"],"image":"bryan.jpeg"},"articleBody":"前言個人在 Proxmox VE(簡稱 PVE)的虛擬機(以下簡稱 VM)中想要安裝並啟用 Kata Containers，卻遇到了跑不起來的問題。網路上說的巢狀虛擬化也啟用了，Kata Containers 需要載入的 kernel module 也載入了，但還是起不來。後來有發現問題出在哪裡，因此做個筆記。\n問題\n環境\nPVE: 7.0-11\nVM: Ubuntu 20.04\nkata-container: 2.2.2\n\n\n\n按照官方安裝教學，做完之後 kata-runtime kata-check 會出現以下結果：\n\n原因推測是因為Kata Containers底層是跑 VM (QEMU)， VM 用沒辦法用假的 CPU 跑起來。預設 PVE 配置給底下 VM 的 CPU 是假的，因此會無法運行。\n解決辦法\n到 PVE 上修改 VM 的 CPU 種類，改成 host。\n重啟 VM 就可以成功囉！\n\n","dateCreated":"2021-10-23T04:12:50+08:00","dateModified":"2024-02-12T11:06:52+08:00","datePublished":"2021-10-23T04:12:50+08:00","description":"個人在 Proxmox VE(簡稱 PVE)的虛擬機(以下簡稱 VM)中想要安裝並啟用 Kata Containers，卻遇到了跑不起來的問題。...","headline":"如何在 Proxmox VE 虛擬機中使用 Kata Containers","image":["https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg","https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"],"mainEntityOfPage":{"@type":"WebPage","@id":"http://example.com/2021/10/23/pve-vm-kata/"},"publisher":{"@type":"Organization","name":"BryanHsu","sameAs":["https://github.com/bryanhsu00","https://tw.linkedin.com/in/bryan-hsu-668773202","mailto:bryanhsu1020@gmail.com"],"image":"bryan.jpeg","logo":{"@type":"ImageObject","url":"bryan.jpeg"}},"url":"http://example.com/2021/10/23/pve-vm-kata/","keywords":"PVE","thumbnailUrl":"https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"}</script>
-    <meta name="description" content="個人在 Proxmox VE(簡稱 PVE)的虛擬機(以下簡稱 VM)中想要安裝並啟用 Kata Containers，卻遇到了跑不起來的問題。...">
+    <script type="application/ld+json">{"@context":"http://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"BryanHsu","sameAs":["https://github.com/bryanhsu00","https://tw.linkedin.com/in/bryan-hsu-668773202","mailto:bryanhsu1020@gmail.com"],"image":"bryan.jpeg"},"articleBody":"前言最近在研究 EKS 用戶身份認證流程，做個筆記記錄一下。\n流程\n當用戶使用 kubectl 操作時，kubectl 會去讀取 ~&#x2F;.kube&#x2F;config 檔案內容\n~&#x2F;.kube&#x2F;config 檔案內容再使用 EKS 場景下，一般都是透過 aws eks update-kubeconfig –name  指令產生，因此，內容大致如下\n\n123456789101112131415$ cat ~/.kube/config- name: arn:aws:eks:ap-northeast-1:123456789012:cluster/eks-124  user:    exec:      apiVersion: client.authentication.k8s.io/v1beta1      args:      - --region      - ap-northeast-1      - eks      - get-token      - --cluster-name      - eks-124      - --output      - json      command: aws\n\n上述文件內容表明了 ~&#x2F;.kube&#x2F;config 中的 token 是透過 aws eks get-token –cluster-name  –region  –output json 指令產生。若是攤開成命令，示例如下：\n12345678910$ aws eks get-token --cluster-name eks-124 --region ap-northeast-1&#123;    &quot;kind&quot;: &quot;ExecCredential&quot;,    &quot;apiVersion&quot;: &quot;client.authentication.k8s.io/v1beta1&quot;,    &quot;spec&quot;: &#123;&#125;,    &quot;status&quot;: &#123;        &quot;expirationTimestamp&quot;: &quot;2024-07-13T18:08:55Z&quot;,        &quot;token&quot;: &quot;k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot;    &#125;&#125;\n\nkubectl 在向 API Server 發請求時，會在 header 中以 bearer token 的方式帶入這個 token 來做認證。我們可以透過 curl 驗證這個 token 可用性：\n123456789$ token=k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk$ curl https://ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.gr7.ap-northeast-1.eks.amazonaws.com --insecure -H &quot;Authorization: Bearer $token&quot;&#123;  &quot;paths&quot;: [    &quot;/.well-known/openid-configuration&quot;,    &quot;/api&quot;,    &quot;/api/v1&quot;,    ...&#125;\n\n\n當請求發送到 API Server 時，API Server 會將請求 header 中的 bearer token 轉給 authentication webhook，authentication webhook 會去解開 token 當中的內容，並呼叫內容當中的 pre-signed URL（GetCallerIdentity）與 IAM 服務進行用戶認證，並取得 account id,、account Arn、UserId 等資訊，如下示例：\n\n12$ echo &quot;aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot; | base64 -dhttps://sts.ap-northeast-1.amazonaws.com/?Action=GetCallerIdentity&amp;Version=2011-06-15&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=AKIAUNJCWBHHOB6TYQG4%2F20240713%2Fap-northeast-1%2Fsts%2Faws4_request&amp;X-Amz-Date=20240713T175455Z&amp;X-Amz-Expires=60&amp;X-Amz-SignedHeaders=host%3Bx-k8s-aws-id&amp;X-Amz-Signature=d59416f8aff0a0107718a34485309d13dd444fef29773d3420f4cf53edf03b                                                    \n\n在取得這些資訊之後，authentication webhook 會將結果回傳給 API Server\n\nAPI Server 取得 account id、account Arn、UserId 等資訊後，會去讀取 aws-auth ConfigMap 取得用戶在 kubernetes 當中對應的 RBAC 身份組，並確認用戶是否有權限操作資源。\n\n參考[1] https://aws.github.io/aws-eks-best-practices/security/docs/iam/#controlling-access-to-eks-clusters[2] https://betterprogramming.pub/kubernetes-authentication-in-aws-eks-using-iam-authenticator-de3a586e885c\n","dateCreated":"2024-07-13T17:15:09+08:00","dateModified":"2024-07-14T02:04:15+08:00","datePublished":"2024-07-13T17:15:09+08:00","description":"最近在研究 EKS EKS 用戶身份認證流程，做個筆記...","headline":"EKS 用戶身份認證流程","image":["https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg","https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"],"mainEntityOfPage":{"@type":"WebPage","@id":"http://example.com/2024/07/13/eks-auth/"},"publisher":{"@type":"Organization","name":"BryanHsu","sameAs":["https://github.com/bryanhsu00","https://tw.linkedin.com/in/bryan-hsu-668773202","mailto:bryanhsu1020@gmail.com"],"image":"bryan.jpeg","logo":{"@type":"ImageObject","url":"bryan.jpeg"}},"url":"http://example.com/2024/07/13/eks-auth/","keywords":"EKS, Kubernetes","thumbnailUrl":"https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"}</script>
+    <meta name="description" content="最近在研究 EKS EKS 用戶身份認證流程，做個筆記...">
 <meta property="og:type" content="blog">
-<meta property="og:title" content="如何在 Proxmox VE 虛擬機中使用 Kata Containers">
-<meta property="og:url" content="http://example.com/2021/10/23/pve-vm-kata/index.html">
+<meta property="og:title" content="EKS 用戶身份認證流程">
+<meta property="og:url" content="http://example.com/2024/07/13/eks-auth/index.html">
 <meta property="og:site_name" content="BryanHsu&#39;s blog">
-<meta property="og:description" content="個人在 Proxmox VE(簡稱 PVE)的虛擬機(以下簡稱 VM)中想要安裝並啟用 Kata Containers，卻遇到了跑不起來的問題。...">
+<meta property="og:description" content="最近在研究 EKS EKS 用戶身份認證流程，做個筆記...">
 <meta property="og:locale" content="en_US">
-<meta property="og:image" content="http://example.com/images/kata-fail.png">
-<meta property="og:image" content="http://example.com/images/pve-vm-cpu.png">
-<meta property="og:image" content="http://example.com/images/kata-success.png">
-<meta property="article:published_time" content="2021-10-22T20:12:50.000Z">
-<meta property="article:modified_time" content="2024-02-12T03:06:52.443Z">
+<meta property="article:published_time" content="2024-07-13T09:15:09.000Z">
+<meta property="article:modified_time" content="2024-07-13T18:04:15.863Z">
 <meta property="article:author" content="BryanHsu">
-<meta property="article:tag" content="PVE">
+<meta property="article:tag" content="EKS">
+<meta property="article:tag" content="Kubernetes">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:image" content="http://example.com/images/kata-fail.png">
     
     
         
@@ -40,12 +37,12 @@
         <meta property="og:image" content="http://example.com/assets/images/bryan.jpeg"/>
     
     
-        <meta property="og:image" content="https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"/>
-        <meta class="swiftype" name="image" data-type="enum" content="https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"/>
+        <meta property="og:image" content="https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"/>
     
     
-        <meta property="og:image" content="https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"/>
-        <meta class="swiftype" name="image" data-type="enum" content="https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg"/>
+        <meta property="og:image" content="https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"/>
+        <meta class="swiftype" name="image" data-type="enum" content="https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg"/>
     
     
     <!--STYLES-->
@@ -289,7 +286,7 @@
         <div class="post-header-cover
                     text-left
                     post-header-cover--partial"
-             style="background-image:url('https://images.pexels.com/photos/1107717/pexels-photo-1107717.jpeg');"
+             style="background-image:url('https://images.pexels.com/photos/247599/pexels-photo-247599.jpeg');"
              data-behavior="4">
             
         </div>
@@ -305,14 +302,14 @@
         <div class="post-header main-content-wrap text-left">
     
         <h1 class="post-title">
-            如何在 Proxmox VE 虛擬機中使用 Kata Containers
+            EKS 用戶身份認證流程
         </h1>
     
     
         <div class="post-meta">
-    <time datetime="2021-10-23T04:12:50+08:00">
+    <time datetime="2024-07-13T17:15:09+08:00">
 	
-		    Oct 23, 2021
+		    Jul 13, 2024
     	
     </time>
     
@@ -324,22 +321,29 @@
     
     <div class="post-content markdown">
         <div class="main-content-wrap">
-            <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>個人在 <code>Proxmox VE</code>(簡稱 <code>PVE</code>)的虛擬機(以下簡稱 VM)中想要安裝並啟用 <code>Kata Containers</code>，卻遇到了跑不起來的問題。<br>網路上說的巢狀虛擬化也啟用了，<code>Kata Containers</code> 需要載入的 kernel module 也載入了，但還是起不來。後來有發現問題出在哪裡，因此做個筆記。</p>
-<h2 id="問題"><a href="#問題" class="headerlink" title="問題"></a>問題</h2><ul>
-<li>環境<ul>
-<li>PVE: 7.0-11</li>
-<li>VM: Ubuntu 20.04</li>
-<li>kata-container: 2.2.2</li>
-</ul>
-</li>
-</ul>
-<p>按照官方安裝<a target="_blank" rel="noopener" href="https://github.com/kata-containers/kata-containers/blob/main/docs/install/snap-installation-guide.md">教學</a>，做完之後 <code>kata-runtime kata-check</code> 會出現以下結果：</p>
-<p><img src="/images/kata-fail.png"></p>
-<p>原因推測是因為<code>Kata Containers</code>底層是跑 VM (QEMU)， VM 用沒辦法用假的 CPU 跑起來。<br>預設 <code>PVE</code> 配置給底下 VM 的 CPU 是假的，因此會無法運行。</p>
-<h2 id="解決辦法"><a href="#解決辦法" class="headerlink" title="解決辦法"></a>解決辦法</h2><ol>
-<li>到 PVE 上修改 VM 的 CPU 種類，改成 host。<br><img src="/images/pve-vm-cpu.png"></li>
-<li>重啟 VM 就可以成功囉！<br><img src="/images/kata-success.png"></li>
+            <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近在研究 EKS 用戶身份認證流程，做個筆記記錄一下。</p>
+<h2 id="流程"><a href="#流程" class="headerlink" title="流程"></a>流程</h2><ol>
+<li>當用戶使用 kubectl 操作時，kubectl 會去讀取 ~&#x2F;.kube&#x2F;config 檔案內容</li>
+<li>~&#x2F;.kube&#x2F;config 檔案內容再使用 EKS 場景下，一般都是透過 aws eks update-kubeconfig –name <cluster-name> 指令產生，因此，內容大致如下</li>
 </ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">$ cat ~/.kube/config</span><br><span class="line">- name: arn:aws:eks:ap-northeast-1:123456789012:cluster/eks-124</span><br><span class="line">  user:</span><br><span class="line">    exec:</span><br><span class="line">      apiVersion: client.authentication.k8s.io/v1beta1</span><br><span class="line">      args:</span><br><span class="line">      - --region</span><br><span class="line">      - ap-northeast-1</span><br><span class="line">      - eks</span><br><span class="line">      - get-token</span><br><span class="line">      - --cluster-name</span><br><span class="line">      - eks-124</span><br><span class="line">      - --output</span><br><span class="line">      - json</span><br><span class="line">      command: aws</span><br></pre></td></tr></table></figure>
+
+<p>上述文件內容表明了 ~&#x2F;.kube&#x2F;config 中的 token 是透過 aws eks get-token –cluster-name <cluster-name> –region <region-name> –output json 指令產生。若是攤開成命令，示例如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">$ aws eks get-token --cluster-name eks-124 --region ap-northeast-1</span><br><span class="line">&#123;</span><br><span class="line">    &quot;kind&quot;: &quot;ExecCredential&quot;,</span><br><span class="line">    &quot;apiVersion&quot;: &quot;client.authentication.k8s.io/v1beta1&quot;,</span><br><span class="line">    &quot;spec&quot;: &#123;&#125;,</span><br><span class="line">    &quot;status&quot;: &#123;</span><br><span class="line">        &quot;expirationTimestamp&quot;: &quot;2024-07-13T18:08:55Z&quot;,</span><br><span class="line">        &quot;token&quot;: &quot;k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>kubectl 在向 API Server 發請求時，會在 header 中以 bearer token 的方式帶入這個 token 來做認證。我們可以透過 curl 驗證這個 token 可用性：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ token=k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk</span><br><span class="line">$ curl https://ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.gr7.ap-northeast-1.eks.amazonaws.com --insecure -H &quot;Authorization: Bearer $token&quot;</span><br><span class="line">&#123;</span><br><span class="line">  &quot;paths&quot;: [</span><br><span class="line">    &quot;/.well-known/openid-configuration&quot;,</span><br><span class="line">    &quot;/api&quot;,</span><br><span class="line">    &quot;/api/v1&quot;,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ol start="3">
+<li>當請求發送到 API Server 時，API Server 會將請求 header 中的 bearer token 轉給 authentication webhook，authentication webhook 會去解開 token 當中的內容，並呼叫內容當中的 pre-signed URL（GetCallerIdentity）與 IAM 服務進行用戶認證，並取得 account id,、account Arn、UserId 等資訊，如下示例：</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ echo &quot;aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot; | base64 -d</span><br><span class="line">https://sts.ap-northeast-1.amazonaws.com/?Action=GetCallerIdentity&amp;Version=2011-06-15&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=AKIAUNJCWBHHOB6TYQG4%2F20240713%2Fap-northeast-1%2Fsts%2Faws4_request&amp;X-Amz-Date=20240713T175455Z&amp;X-Amz-Expires=60&amp;X-Amz-SignedHeaders=host%3Bx-k8s-aws-id&amp;X-Amz-Signature=d59416f8aff0a0107718a34485309d13dd444fef29773d3420f4cf53edf03b                                                    </span><br></pre></td></tr></table></figure>
+
+<p>在取得這些資訊之後，authentication webhook 會將結果回傳給 API Server</p>
+<ol start="4">
+<li>API Server 取得 account id、account Arn、UserId 等資訊後，會去讀取 aws-auth ConfigMap 取得用戶在 kubernetes 當中對應的 RBAC 身份組，並確認用戶是否有權限操作資源。</li>
+</ol>
+<h2 id="參考"><a href="#參考" class="headerlink" title="參考"></a>參考</h2><p>[1] <a target="_blank" rel="noopener" href="https://aws.github.io/aws-eks-best-practices/security/docs/iam/#controlling-access-to-eks-clusters">https://aws.github.io/aws-eks-best-practices/security/docs/iam/#controlling-access-to-eks-clusters</a><br>[2] <a target="_blank" rel="noopener" href="https://betterprogramming.pub/kubernetes-authentication-in-aws-eks-using-iam-authenticator-de3a586e885c">https://betterprogramming.pub/kubernetes-authentication-in-aws-eks-using-iam-authenticator-de3a586e885c</a></p>
 
             
 
@@ -351,7 +355,7 @@
             <div class="post-footer-tags">
                 <span class="text-color-light text-small">TAGGED IN</span><br/>
                 
-    <a class="tag tag--primary tag--small t-none-link" href="/tags/PVE/" rel="tag">PVE</a>
+    <a class="tag tag--primary tag--small t-none-link" href="/tags/EKS/" rel="tag">EKS</a> <a class="tag tag--primary tag--small t-none-link" href="/tags/Kubernetes/" rel="tag">Kubernetes</a>
 
             </div>
         
@@ -364,9 +368,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2024/07/13/eks-auth/"
-                    data-tooltip="EKS 用戶身份認證流程"
-                    aria-label="PREVIOUS: EKS 用戶身份認證流程"
+                    href="/2050/03/07/welcome/"
+                    data-tooltip="Welcome to BryanHsu&#39;s blog"
+                    aria-label="PREVIOUS: Welcome to BryanHsu&#39;s blog"
                 >
                     
                         <i class="fa fa-angle-left" aria-hidden="true"></i>
@@ -378,9 +382,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2021/09/19/pve-lxc-gpu/"
-                    data-tooltip="如何在 Proxmox VE 環境下用 LXC Container 共享 GPU"
-                    aria-label="NEXT: 如何在 Proxmox VE 環境下用 LXC Container 共享 GPU"
+                    href="/2021/10/23/pve-vm-kata/"
+                    data-tooltip="如何在 Proxmox VE 虛擬機中使用 Kata Containers"
+                    aria-label="NEXT: 如何在 Proxmox VE 虛擬機中使用 Kata Containers"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -405,7 +409,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -418,7 +422,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -431,7 +435,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://plus.google.com/share?url=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -479,9 +483,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2024/07/13/eks-auth/"
-                    data-tooltip="EKS 用戶身份認證流程"
-                    aria-label="PREVIOUS: EKS 用戶身份認證流程"
+                    href="/2050/03/07/welcome/"
+                    data-tooltip="Welcome to BryanHsu&#39;s blog"
+                    aria-label="PREVIOUS: Welcome to BryanHsu&#39;s blog"
                 >
                     
                         <i class="fa fa-angle-left" aria-hidden="true"></i>
@@ -493,9 +497,9 @@
                     
                 <a
                     class="post-action-btn btn btn--default tooltip--top"
-                    href="/2021/09/19/pve-lxc-gpu/"
-                    data-tooltip="如何在 Proxmox VE 環境下用 LXC Container 共享 GPU"
-                    aria-label="NEXT: 如何在 Proxmox VE 環境下用 LXC Container 共享 GPU"
+                    href="/2021/10/23/pve-vm-kata/"
+                    data-tooltip="如何在 Proxmox VE 虛擬機中使用 Kata Containers"
+                    aria-label="NEXT: 如何在 Proxmox VE 虛擬機中使用 Kata Containers"
                 >
                     
                         <span class="hide-xs hide-sm text-small icon-mr">NEXT</span>
@@ -520,7 +524,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Facebook"
                     aria-label="Share on Facebook"
                 >
@@ -533,7 +537,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://twitter.com/intent/tweet?text=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://twitter.com/intent/tweet?text=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Twitter"
                     aria-label="Share on Twitter"
                 >
@@ -546,7 +550,7 @@
             <li class="post-action hide-xs">
                 <a
                     class="post-action-btn btn btn--default"
-                    target="new" href="https://plus.google.com/share?url=http://example.com/2021/10/23/pve-vm-kata/"
+                    target="new" href="https://plus.google.com/share?url=http://example.com/2024/07/13/eks-auth/"
                     title="Share on Google+"
                     aria-label="Share on Google+"
                 >
@@ -580,7 +584,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2021/10/23/pve-vm-kata/"
+                        href="https://www.facebook.com/sharer/sharer.php?u=http://example.com/2024/07/13/eks-auth/"
                         aria-label="Share on Facebook"
                     >
                         <i class="fab fa-facebook" aria-hidden="true"></i><span>Share on Facebook</span>
@@ -593,7 +597,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://twitter.com/intent/tweet?text=http://example.com/2021/10/23/pve-vm-kata/"
+                        href="https://twitter.com/intent/tweet?text=http://example.com/2024/07/13/eks-auth/"
                         aria-label="Share on Twitter"
                     >
                         <i class="fab fa-twitter" aria-hidden="true"></i><span>Share on Twitter</span>
@@ -606,7 +610,7 @@
                     <a
                         class="share-option-btn"
                         target="new"
-                        href="https://plus.google.com/share?url=http://example.com/2021/10/23/pve-vm-kata/"
+                        href="https://plus.google.com/share?url=http://example.com/2024/07/13/eks-auth/"
                         aria-label="Share on Google+"
                     >
                         <i class="fab fa-google-plus" aria-hidden="true"></i><span>Share on Google+</span>

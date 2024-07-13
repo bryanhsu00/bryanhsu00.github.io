@@ -6,7 +6,7 @@
   <link href="http://example.com/atom.xml" rel="self"/>
   
   <link href="http://example.com/"/>
-  <updated>2024-02-12T21:04:56.692Z</updated>
+  <updated>2024-07-13T09:17:40.884Z</updated>
   <id>http://example.com/</id>
   
   <author>
@@ -18,16 +18,37 @@
   
   <entry>
     <title>Welcome to BryanHsu&#39;s blog</title>
-    <link href="http://example.com/2024/02/12/welcom/"/>
-    <id>http://example.com/2024/02/12/welcom/</id>
-    <published>2024-02-12T03:05:13.025Z</published>
-    <updated>2024-02-12T21:04:56.692Z</updated>
+    <link href="http://example.com/2050/03/07/welcome/"/>
+    <id>http://example.com/2050/03/07/welcome/</id>
+    <published>2050-03-06T16:27:10.000Z</published>
+    <updated>2024-07-13T09:17:40.884Z</updated>
     
     
     <summary type="html">Welcome to BryanHsu&#39;s blog</summary>
     
     
     
+    
+  </entry>
+  
+  <entry>
+    <title>EKS 用戶身份認證流程</title>
+    <link href="http://example.com/2024/07/13/eks-auth/"/>
+    <id>http://example.com/2024/07/13/eks-auth/</id>
+    <published>2024-07-13T09:15:09.000Z</published>
+    <updated>2024-07-13T18:04:15.863Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近在研究 EKS 用戶身份認證流程，做個筆記記錄一下。</p><h2 id="流程"><a href="#流程" class="headerlink" title="流程"></a>流程</h2><ol><li>當用戶使用 kubectl 操作時，kubectl 會去讀取 ~&#x2F;.kube&#x2F;config 檔案內容</li><li>~&#x2F;.kube&#x2F;config 檔案內容再使用 EKS 場景下，一般都是透過 aws eks update-kubeconfig –name <cluster-name> 指令產生，因此，內容大致如下</li></ol><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">$ cat ~/.kube/config</span><br><span class="line">- name: arn:aws:eks:ap-northeast-1:123456789012:cluster/eks-124</span><br><span class="line">  user:</span><br><span class="line">    exec:</span><br><span class="line">      apiVersion: client.authentication.k8s.io/v1beta1</span><br><span class="line">      args:</span><br><span class="line">      - --region</span><br><span class="line">      - ap-northeast-1</span><br><span class="line">      - eks</span><br><span class="line">      - get-token</span><br><span class="line">      - --cluster-name</span><br><span class="line">      - eks-124</span><br><span class="line">      - --output</span><br><span class="line">      - json</span><br><span class="line">      command: aws</span><br></pre></td></tr></table></figure><p>上述文件內容表明了 ~&#x2F;.kube&#x2F;config 中的 token 是透過 aws eks get-token –cluster-name <cluster-name> –region <region-name> –output json 指令產生。若是攤開成命令，示例如下：</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">$ aws eks get-token --cluster-name eks-124 --region ap-northeast-1</span><br><span class="line">&#123;</span><br><span class="line">    &quot;kind&quot;: &quot;ExecCredential&quot;,</span><br><span class="line">    &quot;apiVersion&quot;: &quot;client.authentication.k8s.io/v1beta1&quot;,</span><br><span class="line">    &quot;spec&quot;: &#123;&#125;,</span><br><span class="line">    &quot;status&quot;: &#123;</span><br><span class="line">        &quot;expirationTimestamp&quot;: &quot;2024-07-13T18:08:55Z&quot;,</span><br><span class="line">        &quot;token&quot;: &quot;k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure><p>kubectl 在向 API Server 發請求時，會在 header 中以 bearer token 的方式帶入這個 token 來做認證。我們可以透過 curl 驗證這個 token 可用性：</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ token=k8s-aws-v1.aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk</span><br><span class="line">$ curl https://ABCDEFGHIJKLMNOPQRSTUVWXYZ123456.gr7.ap-northeast-1.eks.amazonaws.com --insecure -H &quot;Authorization: Bearer $token&quot;</span><br><span class="line">&#123;</span><br><span class="line">  &quot;paths&quot;: [</span><br><span class="line">    &quot;/.well-known/openid-configuration&quot;,</span><br><span class="line">    &quot;/api&quot;,</span><br><span class="line">    &quot;/api/v1&quot;,</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure><ol start="3"><li>當請求發送到 API Server 時，API Server 會將請求 header 中的 bearer token 轉給 authentication webhook，authentication webhook 會去解開 token 當中的內容，並呼叫內容當中的 pre-signed URL（GetCallerIdentity）與 IAM 服務進行用戶認證，並取得 account id,、account Arn、UserId 等資訊，如下示例：</li></ol><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ echo &quot;aHR0cHM6Ly9zdHMuYXAtbm9ydGhlYXN0LTEuYW1hem9uYXdzLmNvbS8_QWN0aW9uPUdldENhbGxlcklkZW50aXR5JlZlcnNpb249MjAxMS0wNi0xNSZYLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFVTkpDV0JISE9CNlRZUUc0JTJGMjAyNDA3MTMlMkZhcC1ub3J0aGVhc3QtMSUyRnN0cyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjQwNzEzVDE3NTQ1NVomWC1BbXotRXhwaXJlcz02MCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QlM0J4LWs4cy1hd3MtaWQmWC1BbXotU2lnbmF0dXJlPWQ1OTQxNmY4YWZmMGEwMTA3NzE4YTM0NDg1MzA5ZDEzZGQ0NDRmZWYyOTc3M2QzNDIwZjRjZjUzZWRmMDNiMDk&quot; | base64 -d</span><br><span class="line">https://sts.ap-northeast-1.amazonaws.com/?Action=GetCallerIdentity&amp;Version=2011-06-15&amp;X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=AKIAUNJCWBHHOB6TYQG4%2F20240713%2Fap-northeast-1%2Fsts%2Faws4_request&amp;X-Amz-Date=20240713T175455Z&amp;X-Amz-Expires=60&amp;X-Amz-SignedHeaders=host%3Bx-k8s-aws-id&amp;X-Amz-Signature=d59416f8aff0a0107718a34485309d13dd444fef29773d3420f4cf53edf03b                                                    </span><br></pre></td></tr></table></figure><p>在取得這些資訊之後，authentication webhook 會將結果回傳給 API Server</p><ol start="4"><li>API Server 取得 account id、account Arn、UserId 等資訊後，會去讀取 aws-auth ConfigMap 取得用戶在 kubernetes 當中對應的 RBAC 身份組，並確認用戶是否有權限操作資源。</li></ol><h2 id="參考"><a href="#參考" class="headerlink" title="參考"></a>參考</h2><p>[1] <a href="https://aws.github.io/aws-eks-best-practices/security/docs/iam/#controlling-access-to-eks-clusters">https://aws.github.io/aws-eks-best-practices/security/docs/iam/#controlling-access-to-eks-clusters</a><br>[2] <a href="https://betterprogramming.pub/kubernetes-authentication-in-aws-eks-using-iam-authenticator-de3a586e885c">https://betterprogramming.pub/kubernetes-authentication-in-aws-eks-using-iam-authenticator-de3a586e885c</a></p>]]></content>
+    
+    
+    <summary type="html">最近在研究 EKS EKS 用戶身份認證流程，做個筆記...</summary>
+    
+    
+    
+    
+    <category term="EKS" scheme="http://example.com/tags/EKS/"/>
+    
+    <category term="Kubernetes" scheme="http://example.com/tags/Kubernetes/"/>
     
   </entry>
   
